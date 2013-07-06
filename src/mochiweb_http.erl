@@ -208,6 +208,10 @@ handle_invalid_request(Socket, Request, RevHeaders) ->
     mochiweb_socket:close(Socket),
     exit(normal).
 
+%% We simply ignore proxy CONNECT type of requests
+new_request(Socket, {"CONNECT",{scheme,_,_},_}, _RevHeaders) ->
+    mochiweb_socket:close(Socket),
+    exit(normal);
 new_request(Socket, Request, RevHeaders) ->
     mochiweb_socket:setopts(Socket, [{packet, raw}]),
     mochiweb:new_request({Socket, Request, lists:reverse(RevHeaders)}).
