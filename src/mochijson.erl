@@ -206,12 +206,6 @@ json_encode_string_unicode_1([C | Cs]) ->
 json_encode_string_unicode_1([]) ->
     "\"".
 
-dehex(C) when C >= $0, C =< $9 ->
-    C - $0;
-dehex(C) when C >= $a, C =< $f ->
-    C - $a + 10;
-dehex(C) when C >= $A, C =< $F ->
-    C - $A + 10.
 
 hexdigit(C) when C >= 0, C =< 9 ->
     C + $0;
@@ -313,12 +307,17 @@ tokenize_string("\\r" ++ Rest, S, Acc) ->
 tokenize_string("\\t" ++ Rest, S, Acc) ->
     tokenize_string(Rest, ?ADV_COL(S, 2), [$\t | Acc]);
 tokenize_string([$\\, $u, C3, C2, C1, C0 | Rest], S, Acc) ->
-    % coalesce UTF-16 surrogate pair?
-    C = dehex(C0) bor
-        (dehex(C1) bsl 4) bor
-        (dehex(C2) bsl 8) bor 
-        (dehex(C3) bsl 12),
-    tokenize_string(Rest, ?ADV_COL(S, 6), [C | Acc]);
+    C = erlang:list_to_integer([C3, C2, C1, C0], 16),
+    if C > 16#D7FF, C < 16#DC00 ->
+	%% coalesce UTF-16 surrogate pair
+	[$\\, $u, D3, D2, D1, D0  | Rest2] = Rest,
+	D = erlang:list_to_integer([D3,D2,D1,D0], 16),
+	[CodePoint] = xmerl_ucs:from_utf16be(<<C:16/big-unsigned-integer,
+	    D:16/big-unsigned-integer>>),
+	tokenize_string(Rest2, ?ADV_COL(S, 12), [CodePoint|Acc]);
+    true ->
+    	tokenize_string(Rest, ?ADV_COL(S, 6), [C | Acc])
+    end;
 tokenize_string([C | Rest], S, Acc) when C >= $\s; C < 16#10FFFF ->
     tokenize_string(Rest, ?ADV_COL(S, 1), [C | Acc]).
     
@@ -472,6 +471,12 @@ issue33_test() ->
     Js = {struct, [{"key", [194, 163]}]},
     Encoder = encoder([{input_encoding, utf8}]),
     "{\"key\":\"\\u00a3\"}" = lists:flatten(Encoder(Js)).
+
+coalesce_unicode_test() ->
+	TestStr = [40,119558,41], %string containing U+1D306 TETRAGRAM FOR CENTRE  character
+	Encoded = lists:flatten(mochijson:encode(TestStr)),
+	?assertMatch("\"(\\ud834\\udf06)\"", Encoded),
+	?assertMatch(TestStr, mochijson:decode(Encoded)).
 
 test_one([], _N) ->
     %% io:format("~p tests passed~n", [N-1]),
