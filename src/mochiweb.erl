@@ -69,7 +69,17 @@ new_request({Socket, {Method, '*'=Uri, Version}, Headers}) ->
                          Method,
                          Uri,
                          Version,
-                         mochiweb_headers:make(Headers)).
+                         mochiweb_headers:make(Headers));
+
+%% Decoding code returns HttpString instead of abs_path.  See
+%% http://erlang.org/doc/man/erlang.html#decode_packet-3
+%% We are seeing this on possible attacks attempts, with things like:
+%%   ".\\.\\.\\.\\.\\.\\.\\.\\.\\.\\/windows/win.ini"
+%%   "../../../../../../../../../../../../windows/win.ini"
+%% Instead of crashing with function clause, that is polluting logs, here we close the connection
+new_request({Socket, _, _}) ->
+    mochiweb_socket:close(Socket),
+    exit(normal).
 
 %% @spec new_response({Request, integer(), Headers}) -> MochiWebResponse
 %% @doc Return a mochiweb_response data structure.
